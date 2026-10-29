@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>OSCE 站位計時器</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Azeret+Mono:wght@500;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
+<style>
+/* Layout: phone-first examiner console — station card, giant countdown, thumb-reach controls at bottom, settings drawer */
+:root{
+  --bg:#eef2f1; --panel:#ffffff; --fg:#14211f; --muted:#5b6c69; --line:#d3dcda;
+  --exam:#0b7a6e; --exam-soft:#d6efeb;
+  --warn:#b86a00; --warn-soft:#fbe8cf;
+  --stop:#c8312a; --stop-soft:#fbdedb; --on-stop:#ffffff;
+  --idle:#56606e; --idle-soft:#e3e6ea;
+  --f-num:"Azeret Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+  --f-body:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0d1514; --panel:#15201f; --fg:#e8f0ee; --muted:#93a5a1; --line:#283634;
+  --exam:#2fc2ae; --exam-soft:#123a35; --warn:#f2a440; --warn-soft:#3e2a0f;
+  --stop:#e5463d; --stop-soft:#43161a; --on-stop:#ffffff; --idle:#a3adba; --idle-soft:#262c33; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0d1514; --panel:#15201f; --fg:#e8f0ee; --muted:#93a5a1; --line:#283634;
+  --exam:#2fc2ae; --exam-soft:#123a35; --warn:#f2a440; --warn-soft:#3e2a0f;
+  --stop:#e5463d; --stop-soft:#43161a; --on-stop:#ffffff; --idle:#a3adba; --idle-soft:#262c33; color-scheme:dark}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:16px;-webkit-tap-highlight-color:transparent;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px;transition:background .3s}
+body.timesup{background:var(--stop)}
+.wrap{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:12px;min-height:100%}
+
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:4px}
+.eyebrow{font-size:.8rem;color:var(--muted);letter-spacing:.08em}
+.topic{font-size:clamp(1.25rem,5.4vw,1.8rem);font-weight:900;line-height:1.25;text-wrap:balance}
+.topic b{color:var(--exam);font-family:var(--f-num)}
+.people{display:flex;gap:10px 18px;flex-wrap:wrap;font-size:1rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.people strong{color:var(--fg);font-size:1.15rem}
+
+.stage{--c:var(--exam);--cs:var(--exam-soft);background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  border-top:10px solid var(--c);padding:16px;display:flex;flex-direction:column;gap:12px;flex:1;justify-content:center;transition:background .3s,color .3s}
+.stage[data-phase="warn"]{--c:var(--warn);--cs:var(--warn-soft)}
+.stage[data-phase="stop"]{--c:var(--on-stop);--cs:rgba(255,255,255,.22);background:var(--stop);border-color:var(--stop);color:var(--on-stop)}
+.stage[data-phase="idle"],.stage[data-phase="done"]{--c:var(--idle);--cs:var(--idle-soft)}
+.stage[data-phase="done"]{background:var(--stop);border-color:var(--stop);color:var(--on-stop);--c:var(--on-stop);--cs:rgba(255,255,255,.22)}
+.phase{align-self:flex-start;display:inline-flex;align-items:center;gap:10px;background:var(--cs);color:var(--c);font-weight:900;
+  font-size:clamp(1.15rem,5vw,1.9rem);padding:.2em .75em;border-radius:999px;letter-spacing:.06em}
+.phase .dot{width:.5em;height:.5em;border-radius:50%;background:currentColor}
+.running .phase .dot{animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:.2}}
+.clock{font-family:var(--f-num);font-weight:700;font-variant-numeric:tabular-nums;line-height:1;text-align:center;
+  font-size:clamp(5rem,26vw,15rem);letter-spacing:-.03em}
+.stage[data-phase="warn"] .clock{color:var(--warn)}
+.clock.paused{opacity:.45}
+.instr{text-align:center;font-size:clamp(1rem,4vw,1.3rem);font-weight:500;min-height:1.5em}
+.stage:not([data-phase="stop"]):not([data-phase="done"]) .instr{color:var(--muted)}
+.bar{height:12px;background:var(--cs);border-radius:999px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--c);border-radius:inherit}
+.next{font-size:.95rem;text-align:center;opacity:.8}
+
+.controls{display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;position:sticky;bottom:0;padding-block:8px calc(8px + env(safe-area-inset-bottom,0px));background:inherit}
+button{font:inherit;font-weight:700;border-radius:12px;border:1px solid var(--line);background:var(--panel);color:var(--fg);
+  min-height:60px;padding:0 12px;cursor:pointer;font-size:1.05rem;touch-action:manipulation}
+button.primary{background:var(--fg);color:var(--bg);border-color:var(--fg);font-size:1.35rem}
+button:active{transform:scale(.98)}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid var(--exam);outline-offset:2px}
+.timeline{display:flex;gap:3px;height:26px;overflow-x:auto}
+.seg{flex:var(--w) 0 0;min-width:14px;border-radius:4px;background:var(--exam-soft);color:var(--exam);font-family:var(--f-num);
+  font-size:.7rem;font-weight:700;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
+.seg.read{background:var(--stop-soft);color:var(--stop)}
+.seg.past{opacity:.35}
+.seg.now{outline:2px solid var(--fg);outline-offset:-2px}
+.seg span{position:relative}
+.seg .fill{position:absolute;inset:0 auto 0 0;background:currentColor;opacity:.25}
+.meta{color:var(--muted);font-size:.85rem;font-variant-numeric:tabular-nums}
+body.timesup .meta{color:var(--on-stop)}
+
+details{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 16px}
+summary{cursor:pointer;font-weight:700;min-height:28px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-top:14px}
+.wide{grid-column:1/-1}
+label{display:flex;flex-direction:column;gap:6px;font-size:.9rem;color:var(--muted)}
+label.chk{flex-direction:row;align-items:center;gap:10px;color:var(--fg);min-height:32px}
+input[type=number],input[type=text],textarea{font:inherit;font-size:1.05rem;padding:.5em .6em;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);width:100%}
+input[type=number]{font-family:var(--f-num)}
+textarea{min-height:7.5em;resize:vertical;line-height:1.5}
+input[type=checkbox]{width:22px;height:22px;accent-color:var(--exam)}
+.note{color:var(--muted);font-size:.85rem;margin:12px 0 0;line-height:1.6}
+@media (prefers-reduced-motion:reduce){.running .phase .dot{animation:none}body,.stage{transition:none}}
+.ver{text-align:center;color:var(--muted);font-family:var(--f-num);font-size:.8rem;letter-spacing:.08em;padding-block:4px}
+body.timesup .ver{color:var(--on-stop)}
+.ic{width:1.1em;height:1.1em;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.controls button{display:inline-flex;align-items:center;justify-content:center;gap:.5em}
+.controls .primary .ic{width:1.3em;height:1.3em}
+.phase .ic{width:1.15em;height:1.15em}
+.running .phase .ic{animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{50%{transform:scale(1.2)}}
+summary .ic{vertical-align:-.2em;margin-right:.4em}
+.brand{display:flex;align-items:center;gap:10px}
+.logo{display:grid;place-items:center;width:32px;height:32px;border-radius:10px;background:var(--exam);color:var(--panel)}
+.logo .ic{width:20px;height:20px}
+.ad{display:block}
+.ad-in{display:flex;gap:12px;align-items:center;background:var(--panel);border:1px dashed var(--line);border-radius:12px;padding:10px 12px;color:var(--fg);text-decoration:none}
+a.ad-in:hover{border-color:var(--muted)}
+.ad-in img{width:72px;height:72px;object-fit:cover;border-radius:10px;flex:none}
+.ad-body{display:flex;flex-direction:column;gap:3px;min-width:0}
+.ad-tag{align-self:flex-start;font-size:.7rem;letter-spacing:.1em;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:0 5px}
+.ad-title{font-weight:700;font-size:1rem;overflow-wrap:anywhere}
+.ad-text{color:var(--muted);font-size:.88rem;line-height:1.5;overflow-wrap:anywhere}
+button.mini{min-height:40px;font-size:.9rem;font-weight:500;margin-top:8px}
+input[type=file]{font:inherit;font-size:.9rem;color:var(--fg);max-width:100%}
+@media (prefers-reduced-motion:reduce){.running .phase .ic{animation:none}}
+@media (min-width:700px){.controls{position:static}}
+</style>
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}[hidden]{display:none!important}</style>
+</head>
+<body>
+
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
+<symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.2v13.6a.6.6 0 0 0 .9.5l11-6.8a.6.6 0 0 0 0-1l-11-6.8a.6.6 0 0 0-.9.5z" fill="currentColor" stroke="none"/></symbol>
+<symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1.2" fill="currentColor" stroke="none"/><rect x="14" y="5" width="4" height="14" rx="1.2" fill="currentColor" stroke="none"/></symbol>
+<symbol id="i-skip" viewBox="0 0 24 24"><path d="M5 6l9 6-9 6z" fill="currentColor" stroke="none"/><path d="M18.5 5.5v13"/></symbol>
+<symbol id="i-reset" viewBox="0 0 24 24"><path d="M4.5 12a7.5 7.5 0 1 0 2.4-5.5"/><path d="M4 4.5v4h4"/></symbol>
+<symbol id="i-steth" viewBox="0 0 24 24"><path d="M5 3.5v5.5a4.5 4.5 0 0 0 9 0V3.5M3.8 3.5h2.4M12.8 3.5h2.4"/><path d="M9.5 13.5v1.5a5 5 0 0 0 10 0v-2.2"/><circle cx="19.5" cy="11" r="2"/></symbol>
+<symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16.5v-5a6 6 0 0 1 12 0v5l1.8 1.8H4.2z"/><path d="M10 21h4"/></symbol>
+<symbol id="i-hourglass" viewBox="0 0 24 24"><path d="M7 3h10M7 21h10"/><path d="M8 3c0 5 4 6 4 9s-4 4-4 9M16 3c0 5-4 6-4 9s4 4 4 9"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></symbol>
+<symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></symbol>
+<symbol id="i-logo" viewBox="0 0 24 24"><circle cx="12" cy="13.5" r="7.5"/><path d="M12 9.5v4l2.6 1.6M9.5 3h5M12 3v3"/></symbol>
+</defs></svg>
+
+<div class="wrap">
+  <section class="card" aria-label="考站資訊">
+    <div class="brand"><span class="logo"><svg class="ic"><use href="#i-logo"/></svg></span><span class="eyebrow">OSCE 站位計時器</span></div>
+    <div class="topic" id="topic"></div>
+    <div class="people" id="people"></div>
+  </section>
+
+  <section class="stage" id="stage" data-phase="idle" aria-live="polite">
+    <div class="phase"><svg class="ic"><use id="icPhase" href="#i-steth"/></svg><span id="phaseLabel">準備</span></div>
+    <div class="clock" id="clock">08:00</div>
+    <div class="instr" id="instr"></div>
+    <div class="bar"><i id="bar"></i></div>
+    <div class="next" id="next"></div>
+  </section>
+
+  <div class="controls">
+    <button class="primary" id="btnStart"><svg class="ic"><use id="icStart" href="#i-play"/></svg><span id="lblStart">開始</span></button>
+    <button id="btnSkip"><svg class="ic"><use href="#i-skip"/></svg>下一段</button>
+    <button id="btnReset"><svg class="ic"><use href="#i-reset"/></svg>重設</button>
+  </div>
+
+  <div class="timeline" id="timeline" aria-label="全場時程"></div>
+  <div class="meta" id="meta"></div>
+  <aside class="ad" id="ad" hidden aria-label="廣告"></aside>
+
+  <details id="settings">
+    <summary><svg class="ic"><use href="#i-sliders"/></svg>考站、時間與廣告設定</summary>
+    <div class="grid">
+      <label>站別<input type="number" id="stationNo" min="1" max="99" step="1" value="3"></label>
+      <label>考題<input type="text" id="topicName" value="腹部身體檢查"></label>
+      <label class="wide">學員名單（每行一位，依序輪轉）<textarea id="roster">學員 A
+學員 B
+學員 C
+學員 D
+學員 E
+學員 F</textarea></label>
+      <label>考試時間（分鐘）<input type="number" id="examMin" min="0.5" max="60" step="0.5" value="8"></label>
+      <label>停止讀題（分鐘）<input type="number" id="readMin" min="0.5" max="30" step="0.5" value="2"></label>
+      <label>剩餘提醒（分鐘，0＝不提醒）<input type="number" id="warnMin" min="0" max="10" step="0.5" value="1"></label>
+      <label class="chk"><input type="checkbox" id="leadRead"> 開場先讀題</label>
+      <label class="chk"><input type="checkbox" id="sound" checked> 鈴聲</label>
+      <label class="chk"><input type="checkbox" id="voice" checked> 中文語音播報</label>
+      <label class="chk"><input type="checkbox" id="adShow" checked> 顯示廣告版位</label>
+      <label class="chk"><input type="checkbox" id="adHideExam" checked> 考試進行中隱藏廣告</label>
+      <label>廣告標題<input type="text" id="adTitle" value="廣告版位（範例）"></label>
+      <label>廣告連結（http 或 https，可留空）<input type="text" id="adLink" value="" inputmode="url"></label>
+      <label class="wide">廣告文字<input type="text" id="adText" value="刊登洽詢：請在設定中輸入廣告標題、文字、連結與圖片"></label>
+      <div class="wide"><label>廣告圖片（選填，會縮小後存在這支手機）<input type="file" id="adImgFile" accept="image/*"></label><button type="button" class="mini" id="adImgClear">移除圖片</button></div>
+    </div>
+    <p class="note">循環次數＝名單人數。鈴聲：考試開始長鈴兩響；剩 1 分鐘單響並轉橘；時間到短鈴三響，畫面轉紅，進入讀題。<br>手機請先關閉靜音模式，並在開考前按一次「開始」啟用聲音。<br>多人使用：每位考官用自己的手機開啟同一個連結即可，各自獨立計時，設定與廣告內容只存在各自的手機。</p>
+  </details>
+  <div class="ver">OSCE 站位計時器 v5</div>
+</div>
+
+<script>
+(function(){
+const $=id=>document.getElementById(id);
+const fieldIds=['stationNo','topicName','roster','examMin','readMin','warnMin','adTitle','adText','adLink'];
+const chkIds=['leadRead','sound','voice','adShow','adHideExam'];
+let cfg={}, segs=[], idx=0, remain=0, deadline=0, running=false, warned=false, finished=false, wakeLock=null, ac=null;
+
+function load(){try{const s=JSON.parse(localStorage.getItem('osce-timer-v2')||'{}');
+  fieldIds.forEach(k=>{if(s[k]!=null)$(k).value=s[k]});chkIds.forEach(k=>{if(s[k]!=null)$(k).checked=s[k]});}catch(e){}}
+function save(){try{const s={};fieldIds.forEach(k=>s[k]=$(k).value);chkIds.forEach(k=>s[k]=$(k).checked);
+  localStorage.setItem('osce-timer-v2',JSON.stringify(s));}catch(e){}}
+function readCfg(){
+  const num=(k,d,min)=>{const v=parseFloat($(k).value);return isFinite(v)&&v>=min?v:d};
+  const roster=$('roster').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  cfg={exam:num('examMin',8,0.5)*60000,read:num('readMin',2,0.5)*60000,warn:num('warnMin',1,0)*60000,
+    lead:$('leadRead').checked,station:Math.round(num('stationNo',1,1)),topic:$('topicName').value.trim(),
+    roster:roster.length?roster:['學員 1'],};
+  cfg.rounds=cfg.roster.length;
+}
+function who(i){return cfg.roster[i-1]||('第 '+i+' 位')}
+function fmtMin(ms){const m=ms/60000;return (Number.isInteger(m)?m:m.toFixed(1))+' 分鐘'}
+function build(){segs=[];
+  if(cfg.lead)segs.push({t:'read',n:1,d:cfg.read});
+  for(let i=1;i<=cfg.rounds;i++){segs.push({t:'exam',n:i,d:cfg.exam});if(i<cfg.rounds)segs.push({t:'read',n:i+1,d:cfg.read});}}
+function fmt(ms){const s=Math.max(0,Math.ceil(ms/1000));return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')}
+function fmtLong(ms){const s=Math.round(ms/1000),h=Math.floor(s/3600),m=Math.floor(s%3600/60);return (h?h+' 小時 ':'')+m+' 分'}
+
+function reset(){readCfg();build();idx=0;remain=segs[0].d;running=false;warned=false;finished=false;releaseWake();renderTimeline();render()}
+
+/* ---------- sound ---------- */
+function ctx(){if(!ac){try{ac=new (window.AudioContext||window.webkitAudioContext)()}catch(e){}}if(ac&&ac.state==='suspended')ac.resume();return ac}
+function tone(at,freq,dur,vol){const a=ctx();if(!a)return;const o=a.createOscillator(),g=a.createGain(),o2=a.createOscillator(),g2=a.createGain();
+  o.type='sine';o.frequency.value=freq;o2.type='sine';o2.frequency.value=freq*2.76;
+  const t=a.currentTime+at;g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(vol,t+0.01);g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  g2.gain.setValueAtTime(0,t);g2.gain.linearRampToValueAtTime(vol*0.25,t+0.01);g2.gain.exponentialRampToValueAtTime(0.0001,t+dur*0.4);
+  o.connect(g).connect(a.destination);o2.connect(g2).connect(a.destination);o.start(t);o2.start(t);o.stop(t+dur+0.05);o2.stop(t+dur+0.05)}
+function bell(kind){if(!$('sound').checked)return;
+  if(kind==='exam'){tone(0,880,1.6,.55);tone(1.2,880,1.8,.55)}
+  else if(kind==='stop'){[0,.45,.9].forEach(t=>tone(t,660,.5,.6))}
+  else if(kind==='warn'){tone(0,1046,1.2,.5)}
+  else if(kind==='done'){[0,.35,.7,1.05].forEach((t,i)=>tone(t,[784,880,988,1175][i],.9,.5))}
+  try{navigator.vibrate&&navigator.vibrate(kind==='warn'?300:[300,150,300])}catch(e){}}
+function say(text,delay){if(!$('voice').checked||!('speechSynthesis' in window))return;
+  setTimeout(()=>{try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang='zh-TW';u.rate=0.95;speechSynthesis.speak(u)}catch(e){}},delay||0)}
+function announce(seg){
+  if(!seg){bell('done');say('時間到，全部學員考試結束',1600);return}
+  if(seg.t==='exam'){bell('exam');say(who(seg.n)+'，開始考試',2600)}
+  else{bell('stop');say(cfg.lead&&idx===0?'請閱讀題目':'時間到，請停止作答，下一位'+who(seg.n)+'閱讀題目',1500)}
+}
+
+/* ---------- wake lock ---------- */
+async function wake(){try{if('wakeLock' in navigator)wakeLock=await navigator.wakeLock.request('screen')}catch(e){wakeLock=null}}
+function releaseWake(){try{wakeLock&&wakeLock.release()}catch(e){}wakeLock=null}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&running)wake()});
+
+/* ---------- control ---------- */
+function isFresh(){return remain===segs[idx].d&&!warned}
+function start(){
+  if(finished)reset();
+  ctx();
+  if(!running){const fresh=isFresh();running=true;deadline=performance.now()+remain;wake();if(fresh)announce(segs[idx])}
+  render();
+}
+function pause(){if(!running)return;remain=Math.max(0,deadline-performance.now());running=false;releaseWake();render()}
+function advance(byUser){
+  idx++;warned=false;
+  if(idx>=segs.length){idx=segs.length-1;remain=0;running=false;finished=true;releaseWake();announce(null);renderTimeline();render();return}
+  remain=segs[idx].d;
+  if(running)deadline=performance.now()+remain;
+  if(running||!byUser)announce(segs[idx]);
+  renderTimeline();render();
+}
+function tick(){
+  if(running){
+    remain=deadline-performance.now();
+    const s=segs[idx];
+    if(s.t==='exam'&&cfg.warn>0&&cfg.warn<s.d&&!warned&&remain<=cfg.warn){warned=true;bell('warn');say('剩餘 '+fmtMin(cfg.warn),1000)}
+    if(remain<=0){const over=-remain;advance(false);if(running)deadline=performance.now()+remain-over}
+  }
+  render();
+}
+
+/* ---------- render ---------- */
+function renderTimeline(){
+  const tl=$('timeline');tl.innerHTML='';
+  segs.forEach((s,i)=>{const d=document.createElement('div');d.className='seg '+s.t+(i<idx||finished?' past':'')+(i===idx&&!finished?' now':'');
+    d.style.setProperty('--w',s.d);d.title=(s.t==='exam'?who(s.n)+' 考試 ':'讀題 ')+fmtMin(s.d);
+    d.innerHTML=(i===idx&&!finished?'<i class="fill" id="segfill"></i>':'')+'<span>'+(s.t==='exam'?s.n:'讀')+'</span>';tl.appendChild(d)});
+}
+function esc(t){return t.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function render(){
+  const s=segs[idx],st=$('stage'),clk=$('clock');
+  const idle=!running&&idx===0&&isFresh()&&!finished;
+  const lowWarn=s.t==='exam'&&cfg.warn>0&&remain<=cfg.warn;
+  const phase=finished?'done':idle?'idle':s.t==='read'?'stop':lowWarn?'warn':'exam';
+  st.dataset.phase=phase;st.classList.toggle('running',running);
+  document.body.classList.toggle('timesup',phase==='stop'||phase==='done');
+
+  $('topic').innerHTML='第 <b>'+cfg.station+'</b> 站'+(cfg.topic?'　'+esc(cfg.topic):'');
+  const cur=s.t==='exam'?s.n:null, nxt=s.t==='exam'?s.n+1:s.n;
+  $('people').innerHTML=finished?'<span>共 <strong>'+cfg.rounds+'</strong> 位學員完成</span>':
+    (cur?'<span>應考：<strong>'+esc(who(cur))+'</strong></span>':'<span>讀題：<strong>'+esc(who(s.n))+'</strong></span>')+
+    (s.t==='exam'&&nxt<=cfg.rounds?'<span>下一位：'+esc(who(nxt))+'</span>':'')+
+    '<span>進度 '+(s.n)+' / '+cfg.rounds+'</span>';
+
+  $('phaseLabel').textContent={idle:s.t==='exam'?'準備考試':'準備讀題',exam:'考試中',warn:'剩 '+fmtMin(cfg.warn),stop:'時間到・停止作答',done:'全部結束'}[phase];
+  $('icPhase').setAttribute('href','#i-'+({idle:'steth',exam:'steth',warn:'bell',stop:'hourglass',done:'check'}[phase]));
+  $('instr').textContent=finished?'全部學員考試結束':
+    idle?'按「開始」啟動計時':
+    !running?'已暫停，按「繼續」接續':
+    phase==='stop'?'請學員離開，'+who(s.n)+' 於門口讀題':
+    phase==='warn'?'提醒學員：剩餘 '+fmtMin(cfg.warn):'學員作答中，請考官評分';
+  clk.textContent=fmt(finished?0:remain);
+  clk.classList.toggle('paused',!running&&!finished&&!idle);
+  const p=finished?100:Math.min(100,Math.max(0,(1-remain/s.d)*100));
+  $('bar').style.width=p+'%';const sf=$('segfill');if(sf)sf.style.width=p+'%';
+  const n=segs[idx+1];
+  $('next').textContent=finished?'':n?'接下來：'+(n.t==='exam'?who(n.n)+' 考試 ':'讀題 ')+fmtMin(n.d):'接下來：全部結束';
+  let left=finished?0:Math.max(0,remain);for(let i=idx+1;i<segs.length;i++)left+=segs[i].d;
+  $('meta').textContent='考試 '+fmtMin(cfg.exam)+' ＋ 讀題 '+fmtMin(cfg.read)+'・'+cfg.rounds+' 位學員・全程 '+fmtLong(segs.reduce((a,b)=>a+b.d,0))+'・剩餘 '+fmtLong(left);
+  $('lblStart').textContent=finished?'重新開始':running?'暫停':idle?'開始':'繼續';
+  $('icStart').setAttribute('href',finished?'#i-reset':running?'#i-pause':'#i-play');
+  renderAd(phase);
+}
+
+/* ---------- ad slot ---------- */
+const AD_KEY='osce-ad-img';let adSig='';
+function adImg(){try{return localStorage.getItem(AD_KEY)||''}catch(e){return ''}}
+function safeUrl(u){u=(u||'').trim();return /^https?:\/\/\S+$/i.test(u)?u:''}
+function renderAd(phase){
+  const el=$('ad');
+  const title=$('adTitle').value.trim(),text=$('adText').value.trim(),link=safeUrl($('adLink').value),img=adImg();
+  const hideNow=$('adHideExam').checked&&(phase==='exam'||phase==='warn');
+  const vis=$('adShow').checked&&!hideNow&&!!(title||text||img);
+  el.hidden=!vis;
+  const sig=[title,text,link,img.length].join('|');
+  if(!vis||sig===adSig)return;
+  adSig=sig;el.textContent='';
+  const box=document.createElement(link?'a':'div');box.className='ad-in';
+  if(link){box.href=link;box.target='_blank';box.rel='noopener noreferrer sponsored'}
+  if(img){const im=document.createElement('img');im.src=img;im.alt=title||'廣告';box.appendChild(im)}
+  const body=document.createElement('div');body.className='ad-body';
+  const tag=document.createElement('span');tag.className='ad-tag';tag.textContent='廣告';body.appendChild(tag);
+  if(title){const t=document.createElement('div');t.className='ad-title';t.textContent=title;body.appendChild(t)}
+  if(text){const t=document.createElement('div');t.className='ad-text';t.textContent=text;body.appendChild(t)}
+  box.appendChild(body);el.appendChild(box);
+}
+$('adImgFile').addEventListener('change',e=>{
+  const f=e.target.files&&e.target.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{const im=new Image();im.onload=()=>{
+    const W=Math.min(640,im.width),H=Math.max(1,Math.round(im.height*W/im.width));
+    const c=document.createElement('canvas');c.width=W;c.height=H;const g=c.getContext('2d');
+    g.fillStyle='#fff';g.fillRect(0,0,W,H);g.drawImage(im,0,0,W,H);
+    try{localStorage.setItem(AD_KEY,c.toDataURL('image/jpeg',.82))}catch(err){}
+    adSig='';};im.src=r.result};
+  r.readAsDataURL(f);
+});
+$('adImgClear').onclick=()=>{try{localStorage.removeItem(AD_KEY)}catch(e){}adSig='';$('adImgFile').value=''};
+
+function toggle(){running?pause():start()}
+$('btnStart').onclick=toggle;
+$('btnSkip').onclick=()=>{if(!finished){ctx();advance(true)}};
+$('btnReset').onclick=reset;
+fieldIds.concat(chkIds).forEach(k=>$(k).addEventListener('change',()=>{save();
+  if(['stationNo','topicName'].includes(k)){readCfg();render()}
+  else if(!['sound','voice','adTitle','adText','adLink','adShow','adHideExam'].includes(k))reset()}));
+document.addEventListener('keydown',e=>{if(/INPUT|TEXTAREA/.test(e.target.tagName))return;
+  if(e.code==='Space'){e.preventDefault();toggle()}
+  else if(e.key==='ArrowRight'){if(!finished){ctx();advance(true)}}
+  else if(e.key==='r'||e.key==='R')reset();});
+
+load();reset();setInterval(tick,100);
+})();
+</script>
+
+</body>
+</html>
