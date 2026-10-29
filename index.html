@@ -62,7 +62,7 @@ body.timesup{background:var(--stop)}
 .bar i{display:block;height:100%;width:0;background:var(--c);border-radius:inherit}
 .next{font-size:.95rem;text-align:center;opacity:.8}
 
-.controls{display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;position:sticky;bottom:0;padding-block:8px calc(8px + env(safe-area-inset-bottom,0px));background:inherit}
+.controls{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:10px;position:sticky;bottom:0;padding-block:8px calc(8px + env(safe-area-inset-bottom,0px));background:inherit}
 button{font:inherit;font-weight:700;border-radius:12px;border:1px solid var(--line);background:var(--panel);color:var(--fg);
   min-height:60px;padding:0 12px;cursor:pointer;font-size:1.05rem;touch-action:manipulation}
 button.primary{background:var(--fg);color:var(--bg);border-color:var(--fg);font-size:1.35rem}
@@ -94,7 +94,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:var(--exam)}
 .ver{text-align:center;color:var(--muted);font-family:var(--f-num);font-size:.8rem;letter-spacing:.08em;padding-block:4px}
 body.timesup .ver{color:var(--on-stop)}
 .ic{width:1.1em;height:1.1em;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
-.controls button{display:inline-flex;align-items:center;justify-content:center;gap:.5em}
+.controls button{display:inline-flex;align-items:center;justify-content:center;gap:.4em;white-space:nowrap;padding:0 6px}
 .controls .primary .ic{width:1.3em;height:1.3em}
 .phase .ic{width:1.15em;height:1.15em}
 .running .phase .ic{animation:pulse 1.2s ease-in-out infinite}
@@ -114,6 +114,23 @@ a.ad-in:hover{border-color:var(--muted)}
 button.mini{min-height:40px;font-size:.9rem;font-weight:500;margin-top:8px}
 input[type=file]{font:inherit;font-size:.9rem;color:var(--fg);max-width:100%}
 @media (prefers-reduced-motion:reduce){.running .phase .ic{animation:none}}
+.check{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:10px}
+.check[hidden]{display:none}
+.check-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.check-h strong{font-size:1.1rem;overflow-wrap:anywhere}
+.check-h span{font-family:var(--f-num);font-weight:700;color:var(--exam);font-variant-numeric:tabular-nums}
+.check-state{font-size:.8rem;color:var(--muted)}
+.items{display:flex;flex-direction:column;gap:6px}
+.item{display:flex;align-items:center;gap:12px;width:100%;min-height:52px;text-align:left;font-weight:500;font-size:1rem;line-height:1.35;padding:8px 12px;border-radius:10px;background:var(--bg)}
+.item .box{flex:none;width:28px;height:28px;border-radius:8px;border:2px solid var(--line);display:grid;place-items:center;color:transparent;background:var(--panel)}
+.item .box .ic{width:18px;height:18px;stroke-width:3}
+.item[aria-pressed="true"]{background:var(--exam-soft);border-color:var(--exam)}
+.item[aria-pressed="true"] .box{background:var(--exam);border-color:var(--exam);color:var(--panel)}
+.check-actions{display:flex;gap:8px;flex-wrap:wrap}
+.check-actions button{flex:1;min-width:8em;margin-top:0}
+.msg{font-size:.85rem;color:var(--muted);min-height:1.2em}
+.score-out{min-height:6em;font-family:var(--f-num);font-size:.8rem;white-space:pre}
+.ad-in img{width:80px;height:80px}
 @media (min-width:700px){.controls{position:static}}
 </style>
 <style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}[hidden]{display:none!important}</style>
@@ -149,6 +166,15 @@ input[type=file]{font:inherit;font-size:.9rem;color:var(--fg);max-width:100%}
     <div class="next" id="next"></div>
   </section>
 
+  <section class="check" id="check" hidden aria-label="評分檢核表">
+    <div class="check-h"><strong id="chkWho"></strong><span id="chkScore"></span></div>
+    <div class="check-state" id="chkState"></div>
+    <div class="items" id="chkList"></div>
+    <div class="check-actions"><button type="button" class="mini" id="chkClear">清除本位勾選</button><button type="button" class="mini" id="chkCopy">複製成績</button></div>
+    <div class="msg" id="chkMsg" role="status"></div>
+    <textarea class="score-out" id="scoreOut" readonly hidden aria-label="成績文字"></textarea>
+  </section>
+
   <div class="controls">
     <button class="primary" id="btnStart"><svg class="ic"><use id="icStart" href="#i-play"/></svg><span id="lblStart">開始</span></button>
     <button id="btnSkip"><svg class="ic"><use href="#i-skip"/></svg>下一段</button>
@@ -176,22 +202,31 @@ input[type=file]{font:inherit;font-size:.9rem;color:var(--fg);max-width:100%}
       <label class="chk"><input type="checkbox" id="leadRead"> 開場先讀題</label>
       <label class="chk"><input type="checkbox" id="sound" checked> 鈴聲</label>
       <label class="chk"><input type="checkbox" id="voice" checked> 中文語音播報</label>
+      <label class="wide">檢核項目（每行一項，每項 1 分；以下為範例，請依正式評分表修改）<textarea id="checkItems">自我介紹並確認病人身分
+說明檢查目的並取得同意
+洗手，請病人屈膝仰躺並暴露腹部
+視診腹部外觀與對稱性
+聽診腸蠕動音
+叩診腹部
+觸診腹部（先輕後深）
+檢查結束後告知病人並致謝</textarea></label>
+      <div class="wide"><button type="button" class="mini" id="scoreClearAll">清除全部成績</button></div>
       <label class="chk"><input type="checkbox" id="adShow" checked> 顯示廣告版位</label>
       <label class="chk"><input type="checkbox" id="adHideExam" checked> 考試進行中隱藏廣告</label>
-      <label>廣告標題<input type="text" id="adTitle" value="廣告版位（範例）"></label>
+      <label>廣告標題<input type="text" id="adTitle" value="教學部 廣告圖（範例）"></label>
       <label>廣告連結（http 或 https，可留空）<input type="text" id="adLink" value="" inputmode="url"></label>
-      <label class="wide">廣告文字<input type="text" id="adText" value="刊登洽詢：請在設定中輸入廣告標題、文字、連結與圖片"></label>
+      <label class="wide">廣告文字<input type="text" id="adText" value="這是示範用的虛擬圖片，正式圖片由教學部提供後再替換。"></label>
       <div class="wide"><label>廣告圖片（選填，會縮小後存在這支手機）<input type="file" id="adImgFile" accept="image/*"></label><button type="button" class="mini" id="adImgClear">移除圖片</button></div>
     </div>
-    <p class="note">循環次數＝名單人數。鈴聲：考試開始長鈴兩響；剩 1 分鐘單響並轉橘；時間到短鈴三響，畫面轉紅，進入讀題。<br>手機請先關閉靜音模式，並在開考前按一次「開始」啟用聲音。<br>多人使用：每位考官用自己的手機開啟同一個連結即可，各自獨立計時，設定與廣告內容只存在各自的手機。</p>
+    <p class="note">循環次數＝名單人數。鈴聲：考試開始長鈴兩響；剩 1 分鐘單響並轉橘；時間到短鈴三響，畫面轉紅，進入讀題。<br>手機請先關閉靜音模式，並在開考前按一次「開始」啟用聲音。<br>多人使用：每位考官用自己的手機開啟同一個連結即可，各自獨立計時，設定與廣告內容只存在各自的手機。<br>檢核成績只存在這支手機的瀏覽器，不會上傳；每站結束請先按「複製成績」貼到 Excel。</p>
   </details>
-  <div class="ver">OSCE 站位計時器 v5</div>
+  <div class="ver">OSCE 站位計時器 v6</div>
 </div>
 
 <script>
 (function(){
 const $=id=>document.getElementById(id);
-const fieldIds=['stationNo','topicName','roster','examMin','readMin','warnMin','adTitle','adText','adLink'];
+const fieldIds=['stationNo','topicName','roster','examMin','readMin','warnMin','adTitle','adText','adLink','checkItems'];
 const chkIds=['leadRead','sound','voice','adShow','adHideExam'];
 let cfg={}, segs=[], idx=0, remain=0, deadline=0, running=false, warned=false, finished=false, wakeLock=null, ac=null;
 
@@ -215,7 +250,7 @@ function build(){segs=[];
 function fmt(ms){const s=Math.max(0,Math.ceil(ms/1000));return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')}
 function fmtLong(ms){const s=Math.round(ms/1000),h=Math.floor(s/3600),m=Math.floor(s%3600/60);return (h?h+' 小時 ':'')+m+' 分'}
 
-function reset(){readCfg();build();idx=0;remain=segs[0].d;running=false;warned=false;finished=false;releaseWake();renderTimeline();render()}
+function reset(){marksBy={};chkSig='';readCfg();build();idx=0;remain=segs[0].d;running=false;warned=false;finished=false;releaseWake();renderTimeline();render()}
 
 /* ---------- sound ---------- */
 function ctx(){if(!ac){try{ac=new (window.AudioContext||window.webkitAudioContext)()}catch(e){}}if(ac&&ac.state==='suspended')ac.resume();return ac}
@@ -311,11 +346,13 @@ function render(){
   $('lblStart').textContent=finished?'重新開始':running?'暫停':idle?'開始':'繼續';
   $('icStart').setAttribute('href',finished?'#i-reset':running?'#i-pause':'#i-play');
   renderAd(phase);
+  renderCheck(s,phase,finished);
 }
 
 /* ---------- ad slot ---------- */
 const AD_KEY='osce-ad-img';let adSig='';
-function adImg(){try{return localStorage.getItem(AD_KEY)||''}catch(e){return ''}}
+const DEFAULT_AD_IMG='data:image/svg+xml;charset=utf-8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0b7a6e"/><stop offset="1" stop-color="#27b3a1"/></linearGradient></defs><rect width="160" height="160" rx="22" fill="url(#g)"/><circle cx="132" cy="28" r="46" fill="#fff" opacity=".08"/><circle cx="20" cy="150" r="52" fill="#fff" opacity=".08"/><g fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><rect x="46" y="22" width="68" height="88" rx="9"/><path d="M68 22v-6h24v6"/><path d="M58 48l5 5 9-10M84 49h20"/><path d="M58 70l5 5 9-10M84 71h20"/><path d="M58 92l5 5 9-10M84 93h20"/></g><text x="80" y="137" font-size="22" font-weight="700" fill="#fff" text-anchor="middle" font-family="sans-serif">教學部</text><text x="80" y="153" font-size="11" fill="#fff" opacity=".85" text-anchor="middle" font-family="sans-serif">範例圖</text></svg>');
+function adImg(){try{const v=localStorage.getItem(AD_KEY);if(v===null)return DEFAULT_AD_IMG;return v==='-'?'':v}catch(e){return DEFAULT_AD_IMG}}
 function safeUrl(u){u=(u||'').trim();return /^https?:\/\/\S+$/i.test(u)?u:''}
 function renderAd(phase){
   const el=$('ad');
@@ -346,7 +383,76 @@ $('adImgFile').addEventListener('change',e=>{
     adSig='';};im.src=r.result};
   r.readAsDataURL(f);
 });
-$('adImgClear').onclick=()=>{try{localStorage.removeItem(AD_KEY)}catch(e){}adSig='';$('adImgFile').value=''};
+$('adImgClear').onclick=()=>{try{localStorage.setItem(AD_KEY,'-')}catch(e){}adSig='';$('adImgFile').value=''};
+
+/* ---------- checklist ---------- */
+let marksBy={},chkSig='',curCand=0;
+const SC_KEY='osce-scores-v1';
+function getItems(){return $('checkItems').value.split('\n').map(x=>x.trim()).filter(Boolean)}
+function loadScores(){try{return JSON.parse(localStorage.getItem(SC_KEY)||'[]')}catch(e){return []}}
+function storeScores(a){try{localStorage.setItem(SC_KEY,JSON.stringify(a))}catch(e){}}
+function persistMarks(cand,items){
+  const rec={station:cfg.station,topic:cfg.topic,n:cand,who:who(cand),items:items,marks:marksBy[cand].slice(),t:Date.now()};
+  const all=loadScores().filter(r=>!(r.station===rec.station&&r.n===rec.n&&r.who===rec.who));
+  all.push(rec);storeScores(all);
+}
+function paintCheck(cand){
+  const m=marksBy[cand]||[],bs=$('chkList').children;
+  for(let i=0;i<bs.length;i++)bs[i].setAttribute('aria-pressed',m[i]?'true':'false');
+  $('chkScore').textContent=m.reduce((a,b)=>a+b,0)+' / '+bs.length+' 分';
+}
+function renderCheck(s,phase,fin){
+  const el=$('check'),items=getItems();
+  const cand=fin?cfg.rounds:(s.t==='exam'?s.n:s.n-1);
+  const show=phase!=='idle'&&cand>=1&&items.length>0;
+  el.hidden=!show;
+  if(!show){chkSig='';curCand=0;return}
+  curCand=cand;
+  if(!marksBy[cand]||marksBy[cand].length!==items.length)marksBy[cand]=items.map((_,i)=>(marksBy[cand]&&marksBy[cand][i])?1:0);
+  const sig=cand+'|'+items.join('\u0001');
+  if(sig!==chkSig){
+    chkSig=sig;const list=$('chkList');list.textContent='';
+    items.forEach((t,i)=>{
+      const b=document.createElement('button');b.type='button';b.className='item';b.setAttribute('aria-pressed','false');
+      b.innerHTML='<span class="box"><svg class="ic"><use href="#i-check"/></svg></span><span></span>';
+      b.lastChild.textContent=t;
+      b.addEventListener('click',()=>{const mm=marksBy[cand];mm[i]=mm[i]?0:1;persistMarks(cand,items);paintCheck(cand)});
+      list.appendChild(b);
+    });
+    persistMarks(cand,items);
+  }
+  $('chkWho').textContent=(fin?'最後一位：':s.t==='exam'?'應考：':'上一位：')+who(cand);
+  $('chkState').textContent=fin?'全部結束，可補勾並複製成績':s.t==='exam'?'考試中，勾選已完成的項目':'時間到，仍可補勾；下一位開始考試後自動鎖定';
+  paintCheck(cand);
+}
+function clean(x){return String(x).replace(/[\t\r\n]+/g,' ')}
+function buildTsv(){
+  const rows=loadScores().sort((a,b)=>a.station-b.station||a.n-b.n);
+  if(!rows.length)return '';
+  const lines=[['站別','考題','學員','得分','總分'].concat(getItems()).map(clean).join('\t')];
+  rows.forEach(r=>{const sc=r.marks.reduce((a,b)=>a+b,0);
+    lines.push([r.station,r.topic,r.who,sc,r.items.length].concat(r.marks).map(clean).join('\t'))});
+  return lines.join('\n');
+}
+$('chkCopy').onclick=()=>{
+  const txt=buildTsv(),msg=$('chkMsg'),out=$('scoreOut');
+  if(!txt){msg.textContent='還沒有成績可複製';return}
+  const n=txt.split('\n').length-1;
+  const fallback=()=>{out.hidden=false;out.value=txt;out.focus();out.select();msg.textContent='請手動複製下方文字（共 '+n+' 位）'};
+  try{navigator.clipboard.writeText(txt).then(()=>{out.hidden=true;msg.textContent='已複製 '+n+' 位學員成績，可貼到 Excel'},fallback)}catch(e){fallback()}
+};
+$('chkClear').onclick=()=>{
+  if(!curCand)return;const items=getItems();
+  marksBy[curCand]=items.map(()=>0);persistMarks(curCand,items);paintCheck(curCand);
+  $('chkMsg').textContent='已清除這一位的勾選';
+};
+let clearArm=0;
+$('scoreClearAll').onclick=()=>{
+  const b=$('scoreClearAll');
+  if(!clearArm){clearArm=setTimeout(()=>{clearArm=0;b.textContent='清除全部成績'},4000);b.textContent='再按一次確認清除';return}
+  clearTimeout(clearArm);clearArm=0;storeScores([]);marksBy={};chkSig='';b.textContent='已清除全部成績';
+  setTimeout(()=>{b.textContent='清除全部成績'},2500);
+};
 
 function toggle(){running?pause():start()}
 $('btnStart').onclick=toggle;
@@ -354,8 +460,8 @@ $('btnSkip').onclick=()=>{if(!finished){ctx();advance(true)}};
 $('btnReset').onclick=reset;
 fieldIds.concat(chkIds).forEach(k=>$(k).addEventListener('change',()=>{save();
   if(['stationNo','topicName'].includes(k)){readCfg();render()}
-  else if(!['sound','voice','adTitle','adText','adLink','adShow','adHideExam'].includes(k))reset()}));
-document.addEventListener('keydown',e=>{if(/INPUT|TEXTAREA/.test(e.target.tagName))return;
+  else if(!['sound','voice','adTitle','adText','adLink','adShow','adHideExam','checkItems'].includes(k))reset()}));
+document.addEventListener('keydown',e=>{if(/INPUT|TEXTAREA|BUTTON/.test(e.target.tagName))return;
   if(e.code==='Space'){e.preventDefault();toggle()}
   else if(e.key==='ArrowRight'){if(!finished){ctx();advance(true)}}
   else if(e.key==='r'||e.key==='R')reset();});
